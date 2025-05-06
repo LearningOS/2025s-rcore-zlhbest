@@ -1,5 +1,0 @@
-cargo:rerun-if-changed=../user/src/
-cargo:rerun-if-changed=../user/build/bin/
-app_0: ch3_sleep
-app_1: ch3_sleep1
-app_2: ch3_trace
