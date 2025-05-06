@@ -20,7 +20,8 @@ const SYSCALL_YIELD: usize = 124;
 const SYSCALL_GET_TIME: usize = 169;
 /// trace syscall
 const SYSCALL_TRACE: usize = 410;
-
+/// 取的数字让这几个系统调用，能用顺利的落到数组上
+pub const MAX_SYSCALL_NUM: usize = 8;
 mod fs;
 mod process;
 
