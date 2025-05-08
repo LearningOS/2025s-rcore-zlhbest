@@ -60,7 +60,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
         }
         1 => {
             let target_address = id as *mut u8;
-            unsafe { (target_address as *mut u8).write_volatile(data as u8) }
+            unsafe { target_address.write_volatile(data as u8) }
             0
         }
         2 => {

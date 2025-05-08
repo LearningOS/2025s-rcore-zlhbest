@@ -32,6 +32,7 @@ pub fn init() {
         fn __alltraps();
     }
     unsafe {
+        // stvec寄存器存放的是发生trap的入口
         stvec::write(__alltraps as usize, TrapMode::Direct);
     }
 }
