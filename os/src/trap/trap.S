@@ -40,6 +40,7 @@ __alltraps:
 __restore:
     # now sp->kernel stack(after allocated), sscratch->user stack
     # restore sstatus/sepc
+    # 这里与ch2不同的是 sp并没有被设置到a0上面，那sp指针什么时候指向了内核态的trapcontext呢
     ld t0, 32*8(sp)
     ld t1, 33*8(sp)
     ld t2, 2*8(sp)
@@ -58,4 +59,5 @@ __restore:
     addi sp, sp, 34*8
     # now sp->kernel stack, sscratch->user stack
     csrrw sp, sscratch, sp
+    # 交换完以后，sp是用户栈，sscratch 是内核栈
     sret

@@ -38,4 +38,95 @@
 ### 问题2
 深入理解 trap.S 中两个函数 __alltraps 和 __restore 的作用
 #### L40：刚进入 __restore 时，sp 代表了什么值。请指出 __restore 的两种使用情景。
-进入__restore的时候，sp指向的是TrapContext的值
+在ch2中 __restore 代码中有一句为`mv sp a0`, 其中a0就是调用`__restore`传入的trapContext的值。
+在ch3中 __restore 代码去掉了sp的赋值语句，但是通过代码查看，在__switch中`ld sp, 8(a1)`将传入的taskContext中的TrapContext的值传给了sp,
+__switch的代码中`ret`返回到了`__restore`中。所以刚进入`__restore`时，sp代表了刚刚切换完的任务的TrapContext。
+
+#### L43-L48：这几行汇编代码特殊处理了哪些寄存器？这些寄存器的的值对于进入用户态有何意义？请分别解释。
+首先在第一题中明确了SP是TrapContext的值, 结合TrapContext结构体的布局可以得出。
+```rust
+pub struct TrapContext {
+    /// General-Purpose Register x0-31
+    pub x: [usize; 32],
+    /// Supervisor Status Register
+    pub sstatus: Sstatus,
+    /// Supervisor Exception Program Counter
+    pub sepc: usize,
+}
+```
+```
+ld t0, 32*8(sp)   # t0 存储的是sstatus寄存器的值， 
+ld t1, 33*8(sp)   # t1 存储的是sepc寄存器的值
+ld t2, 2*8(sp)    # t2 存储的是sscratch寄存器的值，因为在__alltraps函数中，该寄存器的值被存入了2号寄存器中
+csrw sstatus, t0   # csrw指令的意思是将t0的值赋值给sstatus寄存器。
+csrw sepc, t1      # 将t1赋值给sepc
+csrw sscratch, t2  # 将t2中的值赋值给sscratch
+```
+sstatus 的 SPP 字段会被修改为 CPU 当前的特权级（U/S）。
+sepc 会被修改为 Trap 处理完成后默认会执行的下一条指令的地址。
+sscratch则是存放了离开内核态时候的内核栈指针
+
+#### L50-L56：为何跳过了 x2 和 x4？
+```
+  ld x1, 1*8(sp)
+    ld x3, 3*8(sp)
+    .set n, 5
+    .rept 27
+        LOAD_GP %n
+        .set n, n+1
+    .endr
+```
+* x2留给了sscratch寄存器，用于存储sscratch寄存器的值。
+* x4在`__alltraps`就没有用到，也是从x5开始的。 所以不需要恢复x4的值
+
+#### L60：该指令之后，sp 和 sscratch 中的值分别有什么意义？
+```
+csrrw sp, sscratch, sp
+```
+在刚进入`__restore`函数的时候，sp代表的是内核栈，sscratch代表的是用户栈。在经过一次转换后，sp切换到了用户栈, sscratch保存了内核栈的值
+
+#### __restore：中发生状态切换在哪一条指令？为何该指令执行之后会进入用户态？
+是在`sret`指令之后实现的，sret指令会完成以下两种功能:
+* CPU 会将当前的特权级按照 sstatus 的 SPP 字段设置为 U 或者 S ；
+* CPU 会跳转到 sepc 寄存器指向的那条指令，然后继续执行。
+
+#### L13：该指令之后，sp 和 sscratch 中的值分别有什么意义？
+```
+csrrw sp, sscratch, sp
+```
+该命令其实是与__restore中的命令有相反的含义。sp指针保存着用户栈的信息，sscratch保存着内核栈的信息，经过交换以后sp变到了内核栈，而sscratch保存了用户栈信息
+
+#### 从 U 态进入 S 态是哪一条指令发生的？
+在U态进行系统调用`ecall`,会触发Trap然后进入`TrapHandler`。
+```rust
+pub fn syscall(id: usize, args: [usize; 3]) -> isize {
+    let mut ret: isize;
+    unsafe {
+        core::arch::asm!(
+            "ecall",
+            inlateout("x10") args[0] => ret,
+            in("x11") args[1],
+            in("x12") args[2],
+            in("x17") id
+        );
+    }
+    ret
+}
+```
+
+## 荣誉准则
+1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与 **以下各位** 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：
+
+    *无*
+
+2. 此外，我也参考了 **以下资料** ，还在代码中对应的位置以注释形式记录了具体的参考来源及内容：
+
+    *[实现特权级切换](https://rcore-os.cn/rCore-Tutorial-Book-v3/chapter2/4trap-handling.html)*
+
+3. 我独立完成了本次实验除以上方面之外的所有工作，包括代码与文档。
+我清楚地知道，从以上方面获得的信息在一定程度上降低了实验难度，可能会影响起评分。
+
+4. 我从未使用过他人的代码，不管是原封不动地复制，还是经过了某些等价转换。
+我未曾也不会向他人（含此后各届同学）复制或公开我的实验代码，我有义务妥善保管好它们。
+我提交至本实验的评测系统的代码，均无意于破坏或妨碍任何计算机系统的正常运转。
+我清楚地知道，以上情况均为本课程纪律所禁止，若违反，对应的实验成绩将按“-100”分计。

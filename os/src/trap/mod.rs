@@ -54,6 +54,8 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway
+            // sepc 寄存器的作用是当 Trap 是一个异常的时候，记录 Trap 发生之前执行的最后一条指令的地址
+            //
             cx.sepc += 4;
             current_task_call_add(cx.x[17]);
             // get system call return value

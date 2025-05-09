@@ -8,13 +8,13 @@
 use crate::config::*;
 use crate::trap::TrapContext;
 use core::arch::asm;
-
+/// 内核栈存放的是每一个TrapContext
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct KernelStack {
     data: [u8; KERNEL_STACK_SIZE],
 }
-
+/// 用户栈保存的是任务运行的数据
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct UserStack {
@@ -96,6 +96,7 @@ pub fn load_apps() {
 
 /// get app info with entry and sp and save `TrapContext` in kernel stack
 pub fn init_app_cx(app_id: usize) -> usize {
+    // 这里的内核栈是一个app一个内核栈
     KERNEL_STACK[app_id].push_context(TrapContext::app_init_context(
         get_base_i(app_id),
         USER_STACK[app_id].get_sp(),

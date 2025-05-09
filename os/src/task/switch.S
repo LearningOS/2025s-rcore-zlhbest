@@ -22,6 +22,7 @@ __switch:
         .set n, n + 1
     .endr
     # restore ra & s0~s11 of next execution
+    # ra寄存器表明了应该返回到哪里继续执行 一般是 __restore，这个时候sp就是a1 的TrapContext
     ld ra, 0(a1)
     .set n, 0
     .rept 12
