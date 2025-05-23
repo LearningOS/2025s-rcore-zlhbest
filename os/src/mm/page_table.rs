@@ -70,6 +70,10 @@ impl PageTableEntry {
     pub fn executable(&self) -> bool {
         (self.flags() & PTEFlags::X) != PTEFlags::empty()
     }
+    /// 用户态是否可以访问
+    pub fn user(&self) -> bool {
+        (self.flags() & PTEFlags::U) != PTEFlags::empty()
+    }
 }
 
 /// page table structure
@@ -101,6 +105,7 @@ impl PageTable {
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, idx) in idxs.iter().enumerate() {
+            // 从当前的页表的页表项找到下一级页表
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
                 result = Some(pte);
@@ -134,18 +139,35 @@ impl PageTable {
         result
     }
     /// set the map between virtual page number and physical page number
+    /// 函数的作用是将虚拟页和物理页相关联
     #[allow(unused)]
-    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
+    pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) -> isize {
         let pte = self.find_pte_create(vpn).unwrap();
-        assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+        // 分配的应该是无效才对
+        // assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
+        if pte.is_valid() {
+            // 如果已经映射了，就返回错误
+            error!("vpn {:?} is mapped before mapping", vpn);
+            return -1;
+        }
+        // pte 有效标志位设置为有效
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        0
     }
     /// remove the map between virtual page number and physical page number
     #[allow(unused)]
-    pub fn unmap(&mut self, vpn: VirtPageNum) {
+    pub fn unmap(&mut self, vpn: VirtPageNum) -> isize {
         let pte = self.find_pte(vpn).unwrap();
-        assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
+        // 如果无效，那就会报错
+        //assert!(pte.is_valid(), "vpn {:?} is invalid before unmapping", vpn);
+        if !pte.is_valid() {
+            // 如果没有映射，就返回错误
+            error!("vpn {:?} is invalid before unmapping", vpn);
+            return -1;
+        }
+        // 将页表项置为无效，全部置为0
         *pte = PageTableEntry::empty();
+        0
     }
     /// get the page table entry from the virtual page number
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
@@ -153,6 +175,9 @@ impl PageTable {
     }
     /// get the token from the page table
     pub fn token(&self) -> usize {
+        // 生成的值是一个 64 位整数，表示 satp 寄存器的值
+        // 高 4 位（第 60-63 位）：页表模式（8 表示 SV39）
+        // 低 44 位（第 0-43 位）：页表的根物理页号。
         8usize << 60 | self.root_ppn.0
     }
 }
@@ -179,3 +204,14 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     }
     v
 }
+// 翻译指针，从虚拟指针到物理指针
+// 主要作用就是实现从虚拟地址到物理地址的转换
+// pub fn translated_ptr<T>(token: usize, ptr: *const T) -> *mut T {
+//     let page_table = PageTable::from_token(token);
+//     let start = ptr as usize;
+//     let start_va = VirtAddr::from(start);
+//     let vpn = start_va.floor();
+//     let ppn = page_table.translate(vpn).unwrap().ppn();
+//     let offset = start_va.page_offset();
+//     (ppn.0 + offset) as *mut T
+// }

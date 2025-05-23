@@ -23,6 +23,8 @@ pub use page_table::{PTEFlags, PageTable};
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
     heap_allocator::init_heap();
+    // 这里分配的是从内核结束到内存结束的整个范围
     frame_allocator::init_frame_allocator();
+    // 这是内核空间
     KERNEL_SPACE.exclusive_access().activate();
 }

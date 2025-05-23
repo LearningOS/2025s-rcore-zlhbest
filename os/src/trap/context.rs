@@ -12,6 +12,7 @@ pub struct TrapContext {
     /// Supervisor Exception Program Counter
     pub sepc: usize,
     /// Token of kernel address space
+    /// 内核地址的token
     pub kernel_satp: usize,
     /// Kernel stack pointer of the current application
     pub kernel_sp: usize,

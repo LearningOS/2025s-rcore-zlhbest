@@ -36,9 +36,12 @@ __alltraps:
     # load trap_handler into t1
     ld t1, 36*8(sp)
     # move to kernel_sp
+    # sp指向内核栈
     ld sp, 35*8(sp)
     # switch to kernel space
+    # 将当前的token 
     csrw satp, t0
+    # 清空快表
     sfence.vma
     # jump to trap_handler
     jr t1
@@ -46,8 +49,10 @@ __alltraps:
 __restore:
     # a0: *TrapContext in user space(Constant); a1: user space token
     # switch to user space
+    # 切换地址空间
     csrw satp, a1
     sfence.vma
+    # 
     csrw sscratch, a0
     mv sp, a0
     # now sp points to TrapContext in user space, start restoring based on it

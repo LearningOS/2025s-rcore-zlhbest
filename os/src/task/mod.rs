@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -95,6 +96,18 @@ impl TaskManager {
         let cur = inner.current_task;
         inner.tasks[cur].task_status = TaskStatus::Ready;
     }
+    /// 对当前任务的系统调用数+1
+    fn add_current_task_call_count(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let _ = inner.tasks[current].call_count[syscall_id] += 1;
+    }
+    /// 获取当前任务的系统调用数
+    fn current_task_call_count(&self, syscall_id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].call_count[syscall_id]
+    }
 
     /// Change the status of current `Running` task into `Exited`.
     fn mark_current_exited(&self) {
@@ -124,6 +137,27 @@ impl TaskManager {
     fn get_current_trap_cx(&self) -> &'static mut TrapContext {
         let inner = self.inner.exclusive_access();
         inner.tasks[inner.current_task].get_trap_cx()
+    }
+
+    fn current_task_memory_area(
+        &self,
+        start: usize,
+        end: usize,
+        map_permission: MapPermission,
+    ) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current]
+            .memory_set
+            .insert_framed_area(start.into(), end.into(), map_permission)
+    }
+
+    fn current_task_memory_area_remove(&self, start: usize, end: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current]
+            .memory_set
+            .remove(VirtAddr::from(start).floor(), VirtAddr::from(end).ceil())
     }
 
     /// Change the current 'Running' task's program break
@@ -192,6 +226,14 @@ pub fn exit_current_and_run_next() {
 pub fn current_user_token() -> usize {
     TASK_MANAGER.get_current_token()
 }
+/// 向正在运行的程序中添加内存区域
+pub fn current_task_memory_area(start: usize, end: usize, map_permission: MapPermission) -> isize {
+    TASK_MANAGER.current_task_memory_area(start, end, map_permission)
+}
+/// 移除当前任务
+pub fn current_task_memory_area_remove(start: usize, end: usize) -> isize {
+    TASK_MANAGER.current_task_memory_area_remove(start, end)
+}
 
 /// Get the current 'Running' task's trap contexts.
 pub fn current_trap_cx() -> &'static mut TrapContext {
@@ -201,4 +243,12 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+/// 当前运行的任务+1系统调用
+pub fn current_task_call_add(syscall_id: usize) {
+    TASK_MANAGER.add_current_task_call_count(syscall_id);
+}
+/// 获取当前运行的任务的系统调用数
+pub fn current_task_call_count(syscall_id: usize) -> usize {
+    TASK_MANAGER.current_task_call_count(syscall_id)
 }
