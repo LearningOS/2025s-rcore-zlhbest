@@ -40,7 +40,7 @@ _num_app:
         writeln!(f, r#"    .quad app_{}_start"#, i)?;
     }
     writeln!(f, r#"    .quad app_{}_end"#, apps.len() - 1)?;
-
+    //记录下所有app的名字
     writeln!(
         f,
         r#"

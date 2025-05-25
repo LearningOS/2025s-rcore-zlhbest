@@ -104,12 +104,14 @@ pub fn rust_main() -> ! {
     kernel_log_info();
     mm::init();
     mm::remap_test();
+    // 这个任务是最开始的任务
     task::add_initproc();
     println!("after initproc!");
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
     loader::list_apps();
+    // 选择一个任务，进行调度运行。
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }

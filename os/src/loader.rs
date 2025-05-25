@@ -29,6 +29,7 @@ pub fn get_app_data(app_id: usize) -> &'static [u8] {
 
 lazy_static! {
     ///All of app's name
+    /// 加载所有的app名字
     static ref APP_NAMES: Vec<&'static str> = {
         let num_app = get_num_app();
         extern "C" {
@@ -42,6 +43,7 @@ lazy_static! {
                 while end.read_volatile() != b'\0' {
                     end = end.add(1);
                 }
+                // 读取切片数据
                 let slice = core::slice::from_raw_parts(start, end as usize - start as usize);
                 let str = core::str::from_utf8(slice).unwrap();
                 v.push(str);

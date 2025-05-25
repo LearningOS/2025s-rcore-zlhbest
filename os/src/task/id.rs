@@ -49,7 +49,7 @@ lazy_static! {
 
 /// Abstract structure of PID
 pub struct PidHandle(pub usize);
-
+// RALL思想 drop的时候回收
 impl Drop for PidHandle {
     fn drop(&mut self) {
         //println!("drop pid {}", self.0);
