@@ -56,8 +56,9 @@ impl Inode {
                 disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
                 DIRENT_SZ,
             );
-            if dirent.name() == name {}
-            return Some(dirent.inode_id() as u32);
+            if dirent.name() == name {
+                return Some(dirent.inode_id() as u32);
+            }
         }
         None
     }
@@ -162,49 +163,44 @@ impl Inode {
             inode.clear();
             // 将索引清空掉
             self.fs.lock().dealloc_inode(inode.inode_id);
-        } else {
-            // 如果索引不止一个，那就仅仅删除掉目录项
-            self.modify_disk_inode(|root_node| {
-                // 这里主要是删除掉目录项,根节点存储这目录项
-                let file_count = (root_node.size as usize) / DIRENT_SZ;
-                let mut target_idx = None;
-                let mut dirent = DirEntry::empty();
-                // 找到需要修改的位置
-                for i in 0..file_count {
+        }
+        // 如果索引不止一个，那就仅仅删除掉目录项
+        self.modify_disk_inode(|root_node| {
+            // 这里主要是删除掉目录项,根节点存储这目录项
+            let file_count = (root_node.size as usize) / DIRENT_SZ;
+            let mut target_idx = None;
+            let mut dirent = DirEntry::empty();
+            // 找到需要修改的位置
+            for i in 0..file_count {
+                assert_eq!(
+                    root_node.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device),
+                    DIRENT_SZ,
+                );
+                if dirent.name() == name {
+                    target_idx = Some(i);
+                    break;
+                }
+            }
+            // 进行修改
+            if let Some(idx) = target_idx {
+                // 如果不是最后一个，那就需要吧最后一个塞到要删除的地方
+                if idx != file_count - 1 {
+                    // 用最后一个覆盖
+                    let mut last_dirent = DirEntry::empty();
                     assert_eq!(
-                        root_node.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device),
+                        root_node.read_at(
+                            (file_count - 1) * DIRENT_SZ,
+                            last_dirent.as_bytes_mut(),
+                            &self.block_device
+                        ),
                         DIRENT_SZ,
                     );
-                    if dirent.name() == name {
-                        target_idx = Some(i);
-                        break;
-                    }
+                    root_node.write_at(idx * DIRENT_SZ, last_dirent.as_bytes(), &self.block_device);
                 }
-                // 进行修改
-                if let Some(idx) = target_idx {
-                    // 如果不是最后一个，那就需要吧最后一个塞到要删除的地方
-                    if idx != file_count - 1 {
-                        // 用最后一个覆盖
-                        let mut last_dirent = DirEntry::empty();
-                        assert_eq!(
-                            root_node.read_at(
-                                (file_count - 1) * DIRENT_SZ,
-                                last_dirent.as_bytes_mut(),
-                                &self.block_device
-                            ),
-                            DIRENT_SZ,
-                        );
-                        root_node.write_at(
-                            idx * DIRENT_SZ,
-                            last_dirent.as_bytes(),
-                            &self.block_device,
-                        );
-                    }
-                    // 缩小目录文件大小，不管是不是最后一个，只需要缩小size即可
-                    root_node.size -= DIRENT_SZ as u32;
-                }
-            });
-        }
+                // 缩小目录文件大小，不管是不是最后一个，只需要缩小size即可
+                root_node.size -= DIRENT_SZ as u32;
+            }
+        });
         // 返回还剩下几个
         (link_number - 1) as isize
     }

@@ -2,6 +2,7 @@
 #![no_std]
 #![deny(missing_docs)]
 extern crate alloc;
+extern crate log;
 // 位图抽象
 mod bitmap;
 // 块缓存

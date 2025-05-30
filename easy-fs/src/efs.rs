@@ -172,9 +172,7 @@ impl EasyFileSystem {
                 unsafe { core::ptr::write_bytes(disk_inode as *mut DiskInode, 0, 1) };
             });
         // 然后回收
-        self.inode_bitmap.dealloc(
-            &self.block_device,
-            (block_id - self.inode_area_start_block) as usize,
-        );
+        self.inode_bitmap
+            .dealloc(&self.block_device, inode_id as usize);
     }
 }

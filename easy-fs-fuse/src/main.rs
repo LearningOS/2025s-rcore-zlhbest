@@ -4,6 +4,8 @@ use std::fs::{read_dir, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
 use std::sync::Mutex;
+extern crate log;
+mod logger;
 
 const BLOCK_SZ: usize = 512;
 
@@ -26,6 +28,7 @@ impl BlockDevice for BlockFile {
 }
 
 fn main() {
+    logger::init();
     easy_fs_pack().expect("Error when packing easy-fs!");
 }
 /// 打包镜像，按照指定的源目录下的文件名打包成一个镜像文件
