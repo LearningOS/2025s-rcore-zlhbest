@@ -1,5 +1,5 @@
 //! virtio_blk device driver
-
+// 这是符合Qemu的块设备
 mod virtio_blk;
 
 pub use virtio_blk::VirtIOBlock;
@@ -7,7 +7,7 @@ pub use virtio_blk::VirtIOBlock;
 use alloc::sync::Arc;
 use easy_fs::BlockDevice;
 use lazy_static::*;
-
+// VirtIOBlock是一个实现了BlockDevice trait的块设备驱动
 type BlockDeviceImpl = virtio_blk::VirtIOBlock;
 
 lazy_static! {

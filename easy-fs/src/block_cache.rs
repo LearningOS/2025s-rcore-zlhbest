@@ -28,15 +28,17 @@ impl BlockCache {
         }
     }
     /// Get the address of an offset inside the cached block data
+    /// 获取chahe内偏移数据
     fn addr_of_offset(&self, offset: usize) -> usize {
         &self.cache[offset] as *const _ as usize
     }
-
+    // 创建引用指针
     pub fn get_ref<T>(&self, offset: usize) -> &T
     where
         T: Sized,
     {
         let type_size = core::mem::size_of::<T>();
+        // 检测长度是否超出了范围
         assert!(offset + type_size <= BLOCK_SZ);
         let addr = self.addr_of_offset(offset);
         unsafe { &*(addr as *const T) }
@@ -60,7 +62,7 @@ impl BlockCache {
     pub fn modify<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut T) -> V) -> V {
         f(self.get_mut(offset))
     }
-
+    // 写入磁盘
     pub fn sync(&mut self) {
         if self.modified {
             self.modified = false;
@@ -68,7 +70,7 @@ impl BlockCache {
         }
     }
 }
-
+/// 使用RAII模式，确保BlockCache在离开作用域时自动同步到磁盘
 impl Drop for BlockCache {
     fn drop(&mut self) {
         self.sync()
@@ -76,7 +78,7 @@ impl Drop for BlockCache {
 }
 /// Use a block cache of 16 blocks
 const BLOCK_CACHE_SIZE: usize = 16;
-
+/// 块缓存管理器
 pub struct BlockCacheManager {
     queue: VecDeque<(usize, Arc<Mutex<BlockCache>>)>,
 }
@@ -87,7 +89,7 @@ impl BlockCacheManager {
             queue: VecDeque::new(),
         }
     }
-
+    /// 获取一个BlockCache
     pub fn get_block_cache(
         &mut self,
         block_id: usize,
@@ -98,19 +100,23 @@ impl BlockCacheManager {
         } else {
             // substitute
             if self.queue.len() == BLOCK_CACHE_SIZE {
-                // from front to tail
+                // from front to tail 找到引用只剩下1的BlockCache
+                // 这里的Arc::strong_count(&pair.1) == 1表示BlockCache没有被其他地方引用
+                // 这时可以安全地移除它
                 if let Some((idx, _)) = self
                     .queue
                     .iter()
                     .enumerate()
                     .find(|(_, pair)| Arc::strong_count(&pair.1) == 1)
                 {
+                    // 移除idx处的BlockCache
                     self.queue.drain(idx..=idx);
                 } else {
                     panic!("Run out of BlockCache!");
                 }
             }
             // load block into mem and push back
+            // 创建一个新的BlockCache，同时获取数据
             let block_cache = Arc::new(Mutex::new(BlockCache::new(
                 block_id,
                 Arc::clone(&block_device),

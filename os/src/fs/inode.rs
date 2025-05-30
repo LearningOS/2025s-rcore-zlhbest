@@ -4,7 +4,8 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+
+use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
@@ -100,6 +101,17 @@ impl OpenFlags {
         }
     }
 }
+/// 创建一个硬链接
+pub fn create_linkat(old_name: &str, new_name: &str) {
+    // 首先需要找到合适的inode
+    // 如果要创建链接，那么起码需要有一个已经存在的文件
+    ROOT_INODE.linkat(old_name, new_name);
+}
+/// 删除一个硬链接
+/// 注意： 当只剩下一个的时候，直接删除文件
+pub fn unlinkat(name: &str) -> isize {
+    ROOT_INODE.unlinkat(name)
+}
 
 /// Open a file
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
@@ -155,5 +167,25 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn state(&self) -> Stat {
+        let inode = self.inner.exclusive_access();
+        // 获取inode编号
+        let inode_id = inode.inode.get_inode_id();
+        // 获取链接数量
+        let nlink = ROOT_INODE.nlink(inode.inode.clone());
+        let mut mode = StatMode::from_bits(0).unwrap();
+        if inode.inode.is_dir() {
+            mode = StatMode::from_bits(0o040000).unwrap();
+        } else if inode.inode.is_file() {
+            mode = StatMode::from_bits(0o100000).unwrap();
+        }
+        Stat {
+            dev: 0,
+            ino: inode_id as u64,
+            mode: mode,
+            nlink: nlink as u32,
+            pad: [0; 7],
+        }
     }
 }

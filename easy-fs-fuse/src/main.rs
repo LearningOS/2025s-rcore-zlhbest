@@ -8,7 +8,7 @@ use std::sync::Mutex;
 const BLOCK_SZ: usize = 512;
 
 struct BlockFile(Mutex<File>);
-
+/// 自定义驱动
 impl BlockDevice for BlockFile {
     fn read_block(&self, block_id: usize, buf: &mut [u8]) {
         let mut file = self.0.lock().unwrap();
@@ -28,7 +28,7 @@ impl BlockDevice for BlockFile {
 fn main() {
     easy_fs_pack().expect("Error when packing easy-fs!");
 }
-
+/// 打包镜像，按照指定的源目录下的文件名打包成一个镜像文件
 fn easy_fs_pack() -> std::io::Result<()> {
     let matches = App::new("EasyFileSystem packer")
         .arg(
@@ -70,12 +70,13 @@ fn easy_fs_pack() -> std::io::Result<()> {
             name_with_ext
         })
         .collect();
+    // 打包app是通过创建文件的方式，再根目录下创建多个文件
     for app in apps {
         // load app data from host file system
         let mut host_file = File::open(format!("{}{}", target_path, app)).unwrap();
         let mut all_data: Vec<u8> = Vec::new();
         host_file.read_to_end(&mut all_data).unwrap();
-        // create a file in easy-fs
+        // create a file in easy-fs 这里获取的索引
         let inode = root_inode.create(app.as_str()).unwrap();
         // write data to easy-fs
         inode.write_at(0, all_data.as_slice());

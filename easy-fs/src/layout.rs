@@ -9,7 +9,7 @@ const EFS_MAGIC: u32 = 0x3b800001;
 const INODE_DIRECT_COUNT: usize = 28;
 /// The max length of inode name
 const NAME_LENGTH_LIMIT: usize = 27;
-/// The max number of indirect1 inodes
+/// The max number of indirect1 inodes  为什么除以4 呢？因为每个块是512字节，而每个索引是4字节
 const INODE_INDIRECT1_COUNT: usize = BLOCK_SZ / 4;
 /// The max number of indirect2 inodes
 const INODE_INDIRECT2_COUNT: usize = INODE_INDIRECT1_COUNT * INODE_INDIRECT1_COUNT;
@@ -21,6 +21,7 @@ const INDIRECT1_BOUND: usize = DIRECT_BOUND + INODE_INDIRECT1_COUNT;
 #[allow(unused)]
 const INDIRECT2_BOUND: usize = INDIRECT1_BOUND + INODE_INDIRECT2_COUNT;
 /// Super block of a filesystem
+/// 第一个区域只包括一个块，它是 超级块 (Super Block)，用于定位其他连续区域的位置，检查文件系统合法性。
 #[repr(C)]
 pub struct SuperBlock {
     magic: u32,
@@ -74,17 +75,23 @@ pub enum DiskInodeType {
     Directory,
 }
 
-/// A indirect block
+/// A indirect block 一级和二级索引的结构
 type IndirectBlock = [u32; BLOCK_SZ / 4];
 /// A data block
 type DataBlock = [u8; BLOCK_SZ];
-/// A disk inode
+/// A disk inode 索引节点
+/// 其中包含文件/目录的元数据
 #[repr(C)]
 pub struct DiskInode {
+    /// 表示文件/目录内容的字节数
     pub size: u32,
+    /// 是存储文件内容/目录内容的数据块的索引
     pub direct: [u32; INODE_DIRECT_COUNT],
+    // 一级索引， 指向一个一级索引块
     pub indirect1: u32,
+    // 二级索引
     pub indirect2: u32,
+    /// 文件/目录的类型
     type_: DiskInodeType,
 }
 
@@ -137,23 +144,31 @@ impl DiskInode {
         Self::total_blocks(new_size) - Self::total_blocks(self.size)
     }
     /// Get id of block given inner id
+    /// 这个很重要
+    ///
     pub fn get_block_id(&self, inner_id: u32, block_device: &Arc<dyn BlockDevice>) -> u32 {
         let inner_id = inner_id as usize;
+        // 如果小于28 直接返回 direct 数组中的值
         if inner_id < INODE_DIRECT_COUNT {
             self.direct[inner_id]
+            // 如果小于一级索引的上限  因为一个块是512字节，而每个索引是4字节，所以一级索引的上限是 512 / 4 = 128
         } else if inner_id < INDIRECT1_BOUND {
+            // 先获取到一级索引的位置
             get_block_cache(self.indirect1 as usize, Arc::clone(block_device))
                 .lock()
                 .read(0, |indirect_block: &IndirectBlock| {
+                    // 就获取下表
                     indirect_block[inner_id - INODE_DIRECT_COUNT]
                 })
         } else {
             let last = inner_id - INDIRECT1_BOUND;
+            // 获取两次，第一次获取一级索引
             let indirect1 = get_block_cache(self.indirect2 as usize, Arc::clone(block_device))
                 .lock()
                 .read(0, |indirect2: &IndirectBlock| {
                     indirect2[last / INODE_INDIRECT1_COUNT]
                 });
+            // 根据一级索引找到二级索引
             get_block_cache(indirect1 as usize, Arc::clone(block_device))
                 .lock()
                 .read(0, |indirect1: &IndirectBlock| {
@@ -329,6 +344,7 @@ impl DiskInode {
             // read and update read size
             let block_read_size = end_current_block - start;
             let dst = &mut buf[read_size..read_size + block_read_size];
+            // 获取到当前块的缓存
             get_block_cache(
                 self.get_block_id(start_block as u32, block_device) as usize,
                 Arc::clone(block_device),
@@ -389,9 +405,12 @@ impl DiskInode {
     }
 }
 /// A directory entry
+/// 目录项
 #[repr(C)]
 pub struct DirEntry {
+    // 文件名称
     name: [u8; NAME_LENGTH_LIMIT + 1],
+    // 索引编号
     inode_id: u32,
 }
 /// Size of a directory entry
