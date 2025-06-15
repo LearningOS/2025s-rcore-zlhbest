@@ -5,6 +5,7 @@ use crate::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
         suspend_current_and_run_next, SignalFlags,
     },
+    timer::get_time_us,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
@@ -16,7 +17,7 @@ pub struct TimeVal {
 }
 
 /// exit syscall
-///
+/// 退出代码涉及到线程和进程
 /// exit the current task and run the next task in task list
 pub fn sys_exit(exit_code: i32) -> ! {
     trace!(
@@ -151,12 +152,22 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+/// 本次实验只完成get_time,  实现get_time
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_get_time",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    let us = get_time_us();
+    // 获取当前地址的token
+    let token = current_user_token();
+    // 获取到真实数据
+    let real_ts = translated_refmut(token, ts);
+    *real_ts = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    0
 }
 
 /// mmap syscall

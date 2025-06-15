@@ -8,6 +8,7 @@ use alloc::sync::{Arc, Weak};
 use core::cell::RefMut;
 
 /// Task control block structure
+/// 线程控制块
 pub struct TaskControlBlock {
     /// immutable
     pub process: Weak<ProcessControlBlock>,
@@ -33,6 +34,7 @@ impl TaskControlBlock {
 pub struct TaskControlBlockInner {
     pub res: Option<TaskUserRes>,
     /// The physical page number of the frame where the trap context is placed
+    /// 保存了地址空间Trap的物理页帧
     pub trap_cx_ppn: PhysPageNum,
     /// Save task context
     pub task_cx: TaskContext,

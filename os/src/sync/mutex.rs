@@ -13,7 +13,8 @@ pub trait Mutex: Sync + Send {
     /// Unlock the mutex
     fn unlock(&self);
 }
-
+/// 下面这两种实现都是演示操作，只能在单核非抢占式的环境中可以保证正确，
+/// 但是在多核以及非抢占式的环境下无法保证代码的正确性，因为会有多个线程进入else代码将锁设置为true
 /// Spinlock Mutex struct
 pub struct MutexSpin {
     locked: UPSafeCell<bool>,
@@ -92,6 +93,7 @@ impl Mutex for MutexBlocking {
     }
 
     /// unlock the blocking mutex
+    ///  从等待队列中把block的队列，加回来
     fn unlock(&self) {
         trace!("kernel: MutexBlocking::unlock");
         let mut mutex_inner = self.inner.exclusive_access();

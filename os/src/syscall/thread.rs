@@ -4,7 +4,14 @@ use crate::{
     trap::{trap_handler, TrapContext},
 };
 use alloc::sync::Arc;
+use alloc::vec;
 /// thread create syscall
+/// 创建线程
+/// 线程支持所需要的执行环境
+/// 线程的用户态栈：确保在用户态的线程能正常执行函数调用；
+/// 线程的内核态栈：确保线程陷入内核后能正常执行函数调用；
+/// 线程的跳板页：确保线程能正确的进行用户态<–>内核态切换；
+/// 线程上下文：即线程用到的寄存器信息，用于线程切换。
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_thread_create",
@@ -35,6 +42,20 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let new_task_res = new_task_inner.res.as_ref().unwrap();
     let new_task_tid = new_task_res.tid;
     let mut process_inner = process.inner_exclusive_access();
+    // 创建任务需求
+    let res_0_len = process_inner.available[0].len();
+    let res_1_len = process_inner.available[1].len();
+    let alloc_vec = vec![vec![0; res_0_len], vec![0; res_1_len]];
+    if new_task_tid < process_inner.need.len() {
+        process_inner.need[new_task_tid] = alloc_vec.clone();
+        process_inner.allocation[new_task_tid] = alloc_vec.clone();
+    } else {
+        process_inner
+            .allocation
+            .resize(new_task_tid + 1, alloc_vec.clone());
+        process_inner.need.resize(new_task_tid + 1, alloc_vec);
+    }
+
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
     while tasks.len() < new_task_tid + 1 {
@@ -50,6 +71,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
         trap_handler as usize,
     );
     (*new_task_trap_cx).x[10] = arg;
+    drop(process_inner);
     new_task_tid as isize
 }
 /// get current thread id syscall

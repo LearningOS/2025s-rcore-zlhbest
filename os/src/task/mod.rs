@@ -96,6 +96,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
     // however, if this is the main thread of current process
     // the process should terminate at once
+    // tid =0代表主线程
     if tid == 0 {
         let pid = process.getpid();
         if pid == IDLE_PID {
@@ -120,6 +121,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
         {
             // move all child processes under init process
+            // 将子进程挂载到初始进程中执行
             let mut initproc_inner = INITPROC.inner_exclusive_access();
             for child in process_inner.children.iter() {
                 child.inner_exclusive_access().parent = Some(Arc::downgrade(&INITPROC));
@@ -130,6 +132,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // deallocate user res (including tid/trap_cx/ustack) of all threads
         // it has to be done before we dealloc the whole memory_set
         // otherwise they will be deallocated twice
+        // 将没有清空的线程资源，一并清空掉
         let mut recycle_res = Vec::<TaskUserRes>::new();
         for task in process_inner.tasks.iter().filter(|t| t.is_some()) {
             let task = task.as_ref().unwrap();
@@ -151,7 +154,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         // for now to avoid deadlock/double borrow problem.
         drop(process_inner);
         recycle_res.clear();
-
+        // 将所有资源都清空掉
         let mut process_inner = process.inner_exclusive_access();
         process_inner.children.clear();
         // deallocate other data in user space i.e. program code/data section
@@ -162,6 +165,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.tasks.clear();
     }
     drop(process);
+    // 重新加入调度
     // we do not have to save task context
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);

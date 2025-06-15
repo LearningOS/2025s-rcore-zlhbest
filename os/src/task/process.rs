@@ -39,7 +39,7 @@ pub struct ProcessControlBlockInner {
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
     /// signal flags
     pub signals: SignalFlags,
-    /// tasks(also known as threads)
+    /// tasks(also known as threads) 任务也被叫做线程
     pub tasks: Vec<Option<Arc<TaskControlBlock>>>,
     /// task resource allocator
     pub task_res_allocator: RecycleAllocator,
@@ -49,6 +49,16 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// 该进程是否执行死锁  为什么是绑定在PCB中是因为死锁的检测是基于该进程来检测的，主要是为了该进程的所有线程是否存在死锁
+    pub enable_deadlock_detect: bool,
+    /// 可用资源 可用 可用资源只有0 和1
+    /// 0是mutex 1是semaphore
+    /// 第二层是资源id
+    pub available: Vec<Vec<usize>>,
+    /// 需求数组 第一个数组是线程id  第二个数组是0 和1 的资源需求
+    pub need: Vec<Vec<Vec<usize>>>,
+    /// 分配资源数组 线程id  
+    pub allocation: Vec<Vec<Vec<usize>>>,
 }
 
 impl ProcessControlBlockInner {
@@ -119,6 +129,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
+                    available: vec![vec![], vec![]], // 其中只有一个0 和 1
+                    allocation: vec![vec![vec![], vec![]]; 1], //  外面包了一层线程id
+                    need: vec![vec![vec![], vec![]]; 1], //  外面包了一层线程id
                 })
             },
         });
@@ -245,6 +259,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
+                    available: vec![vec![], vec![]], // 其中只有一个0 和 1
+                    allocation: vec![vec![vec![], vec![]]; 1], //  外面包了一层线程id
+                    need: vec![vec![vec![], vec![]]; 1], //  外面包了一层线程id
                 })
             },
         });
@@ -281,5 +299,64 @@ impl ProcessControlBlock {
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+    /// 进行检测死锁
+    pub fn deadlock_detect(&self) -> bool {
+        // 如果没有启动死锁，那就代表死锁一直检测是false
+        if !self.inner_exclusive_access().enable_deadlock_detect {
+            return false;
+        }
+        let process_inner = self.inner_exclusive_access();
+        let mut work = process_inner.available.clone();
+        let need = process_inner.need.clone();
+        let mut finish = vec![false; process_inner.tasks.len()];
+        // 进行检测
+        loop {
+            let index = finish
+                .iter()
+                .enumerate()
+                .find(|(_, item)| **item == false)
+                .map(|(index, _)| {
+                    // 首先检测的是0号资源
+                    if need[index].iter().enumerate().all(|(res_type, res)| {
+                        res.iter()
+                            .enumerate()
+                            .all(|(res_id, res_number)| *res_number <= work[res_type][res_id])
+                    }) {
+                        // 如果所有的资源都ok，那就减去work的资源
+                        for (res_type, res) in need[index].iter().enumerate() {
+                            for (res_id, res_number) in res.iter().enumerate() {
+                                work[res_type][res_id] -= res_number;
+                            }
+                        }
+                        // 设置为true
+                        index as isize
+                    } else {
+                        -1
+                    }
+                });
+            // 如果index==none 那就对了返回false
+            // 如果返回具体数字就设置为true继续循环
+            // 如果设置为-1 说明有false的存在但是资源不够了那就说明死锁了返回true
+            // 如果是none 意味着finish全部为true 也就是没有死锁
+            if index.is_none() {
+                return false;
+            } else {
+                let index = index.unwrap();
+                if index != -1 {
+                    let index = index as usize;
+                    // 将资源还回去
+                    for (res_type, res) in need[index].iter().enumerate() {
+                        for (res_id, res_number) in res.iter().enumerate() {
+                            work[res_type][res_id] += res_number;
+                        }
+                    }
+                    finish[index] = true;
+                } else {
+                    // 如果是-1 那就说明资源不够了，
+                    return true;
+                }
+            }
+        }
     }
 }

@@ -127,6 +127,7 @@ impl KernelStack {
 }
 
 /// User Resource for a task
+/// 该结构体指出了 用户态的线程执行需要的信息
 pub struct TaskUserRes {
     /// task id
     pub tid: usize,

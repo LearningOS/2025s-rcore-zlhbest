@@ -14,7 +14,7 @@ use core::cell::{RefCell, RefMut};
 /// In order to get mutable reference of inner data, call
 /// `exclusive_access`.
 pub struct UPSafeCell<T> {
-    /// inner data
+    /// inner data RefCell 是内部可变性的实现
     inner: RefCell<T>,
 }
 
