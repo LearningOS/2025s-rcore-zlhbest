@@ -313,9 +313,6 @@ impl ProcessControlBlock {
         let need = &process_inner.need;
         let allocation = &process_inner.allocation;
         let mut finish = vec![false; process_inner.tasks.len()];
-        println!("work:{:?}", work);
-        println!("need:{:?}", need);
-        println!("allocation:{:?}", allocation);
         // 进行检测
         loop {
             let index = finish

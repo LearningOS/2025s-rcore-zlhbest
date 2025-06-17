@@ -176,10 +176,8 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
         process_inner.need[tid][1][sem_id] += 1;
         drop(process_inner);
         if process.deadlock_detect(1) {
-            println!("deadlock !!!!!");
             return DEADLOCK_ERROR_VALUE;
         }
-        println!("no deadlock");
     }
     let sem = Arc::clone(
         process.inner_exclusive_access().semaphore_list[sem_id]
