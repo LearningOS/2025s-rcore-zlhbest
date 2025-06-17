@@ -301,59 +301,48 @@ impl ProcessControlBlock {
         self.pid.0
     }
     /// 进行检测死锁
-    pub fn deadlock_detect(&self) -> bool {
+    /// 这种检测智能检测资源型竞争，不能将barrier类型的掺和进来，不然会无法判断
+    /// 需要将资源型和barrier类型隔离开
+    pub fn deadlock_detect(&self, res_type: usize) -> bool {
         // 如果没有启动死锁，那就代表死锁一直检测是false
         if !self.inner_exclusive_access().enable_deadlock_detect {
             return false;
         }
         let process_inner = self.inner_exclusive_access();
         let mut work = process_inner.available.clone();
-        let need = process_inner.need.clone();
+        let need = &process_inner.need;
+        let allocation = &process_inner.allocation;
         let mut finish = vec![false; process_inner.tasks.len()];
+        println!("work:{:?}", work);
+        println!("need:{:?}", need);
+        println!("allocation:{:?}", allocation);
         // 进行检测
         loop {
             let index = finish
                 .iter()
                 .enumerate()
-                .find(|(_, item)| **item == false)
-                .map(|(index, _)| {
-                    // 首先检测的是0号资源
-                    if need[index].iter().enumerate().all(|(res_type, res)| {
-                        res.iter()
+                .find(|(index, item)| {
+                    **item == false
+                        && need[*index][res_type]
+                            .iter()
                             .enumerate()
                             .all(|(res_id, res_number)| *res_number <= work[res_type][res_id])
-                    }) {
-                        // 如果所有的资源都ok，那就减去work的资源
-                        for (res_type, res) in need[index].iter().enumerate() {
-                            for (res_id, res_number) in res.iter().enumerate() {
-                                work[res_type][res_id] -= res_number;
-                            }
-                        }
-                        // 设置为true
-                        index as isize
-                    } else {
-                        -1
-                    }
-                });
-            // 如果index==none 那就对了返回false
-            // 如果返回具体数字就设置为true继续循环
-            // 如果设置为-1 说明有false的存在但是资源不够了那就说明死锁了返回true
-            // 如果是none 意味着finish全部为true 也就是没有死锁
-            if index.is_none() {
+                })
+                .map(|(index, _)| index);
+            // 如果finish 中已经没有等于false的了，那就返回false
+            if finish.iter().find(|item| **item == false).is_none() {
                 return false;
             } else {
-                let index = index.unwrap();
-                if index != -1 {
-                    let index = index as usize;
-                    // 将资源还回去
-                    for (res_type, res) in need[index].iter().enumerate() {
-                        for (res_id, res_number) in res.iter().enumerate() {
-                            work[res_type][res_id] += res_number;
-                        }
+                // 如果index 找到了，需要将资源换回去，继续执行
+                if let Some(i) = index {
+                    // 将资源还回去，将allocation 数组的都加回去
+                    for (res_id, allocation_count) in allocation[i][res_type].iter().enumerate() {
+                        // 将分配的资源都还回去
+                        work[res_type][res_id] += allocation_count;
                     }
-                    finish[index] = true;
+                    finish[i] = true;
                 } else {
-                    // 如果是-1 那就说明资源不够了，
+                    // 如果finish 还存在等于false的并且还没有找到合适的，那么就代表死锁了
                     return true;
                 }
             }

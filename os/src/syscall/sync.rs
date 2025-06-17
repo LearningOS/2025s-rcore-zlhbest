@@ -1,6 +1,6 @@
-use crate::config::DEADLOCK_ERROR_VALUE;
+use crate::config::{BARRIERR, DEADLOCK_ERROR_VALUE};
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
-use crate::task::{block_current_and_run_next, current_process, current_task};
+use crate::task::{block_current_and_run_next, current_process, current_task, current_task_tid};
 use crate::timer::{add_timer, get_time_ms};
 use alloc::sync::Arc;
 /// sleep syscall
@@ -8,13 +8,7 @@ pub fn sys_sleep(ms: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_sleep",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        current_task_tid()
     );
     let expire_ms = get_time_ms() + ms;
     let task = current_task().unwrap();
@@ -27,13 +21,7 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_create",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        current_task_tid()
     );
     let process = current_process();
     let mutex: Option<Arc<dyn Mutex>> = if !blocking {
@@ -70,13 +58,7 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
 }
 /// mutex lock syscall
 pub fn sys_mutex_lock(mutex_id: usize) -> isize {
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task_tid();
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_lock",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
@@ -88,7 +70,7 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     // 首先需求进程加1
     process_inner.need[tid][0][mutex_id] += 1;
     drop(process_inner);
-    if process.deadlock_detect() {
+    if process.deadlock_detect(0) {
         return DEADLOCK_ERROR_VALUE;
     }
     let mut process_inner = process.inner_exclusive_access();
@@ -103,13 +85,7 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
 }
 /// mutex unlock syscall
 pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task_tid();
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_unlock",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
@@ -117,7 +93,6 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     );
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
-    // 还原资源
     process_inner.allocation[tid][0][mutex_id] -= 1;
     process_inner.available[0][mutex_id] += 1;
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
@@ -126,18 +101,12 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     mutex.unlock();
     0
 }
-/// semaphore create syscall
+/// semaphore create syscall 这里的信号量是存在两种的，第一种是barrier类型的，第二类是资源型的信号量。需要进行区分
 pub fn sys_semaphore_create(res_count: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_semaphore_create",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        current_task_tid()
     );
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
@@ -175,58 +144,58 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
 }
 /// semaphore up syscall up是归还资源
 pub fn sys_semaphore_up(sem_id: usize) -> isize {
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task_tid();
     trace!(
         "kernel:pid[{}] tid[{}] sys_semaphore_up",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
         tid
     );
     let process = current_process();
-    let mut process_inner = process.inner_exclusive_access();
-    // 还原资源
-    process_inner.allocation[tid][1][sem_id] -= 1;
-    process_inner.available[1][sem_id] += 1;
+    let process_inner = process.inner_exclusive_access();
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.up();
+    if sem_id >= BARRIERR {
+        process.inner_exclusive_access().allocation[tid][1][sem_id] -= 1;
+        process.inner_exclusive_access().available[1][sem_id] += 1;
+    }
     0
 }
-/// semaphore down syscall down 才是获取资源
+/// semaphore down syscall down
 pub fn sys_semaphore_down(sem_id: usize) -> isize {
-    let tid = current_task()
-        .unwrap()
-        .inner_exclusive_access()
-        .res
-        .as_ref()
-        .unwrap()
-        .tid;
+    let tid = current_task_tid();
     trace!(
         "kernel:pid[{}] tid[{}] sys_semaphore_down",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
         tid
     );
     let process = current_process();
-    let mut process_inner = process.inner_exclusive_access();
-    // 检测是否发生死锁
-    // 首先需求进程加1
-    process_inner.need[tid][1][sem_id] += 1;
-    drop(process_inner);
-    if process.deadlock_detect() {
-        return DEADLOCK_ERROR_VALUE;
+    // 只有资源型才进行分配检测
+    if sem_id >= BARRIERR {
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.need[tid][1][sem_id] += 1;
+        drop(process_inner);
+        if process.deadlock_detect(1) {
+            println!("deadlock !!!!!");
+            return DEADLOCK_ERROR_VALUE;
+        }
+        println!("no deadlock");
     }
-    let mut process_inner = process.inner_exclusive_access();
-    process_inner.allocation[tid][1][sem_id] += 1;
-    process_inner.available[1][sem_id] -= 1;
-    process_inner.need[tid][1][sem_id] -= 1;
-    let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
-    drop(process_inner);
+    let sem = Arc::clone(
+        process.inner_exclusive_access().semaphore_list[sem_id]
+            .as_ref()
+            .unwrap(),
+    );
     sem.down();
+    if sem_id >= BARRIERR {
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.allocation[tid][1][sem_id] += 1;
+        // 这里应该available-1 但是问题是不发生死锁不代表目前存在可用资源，
+        if process_inner.available[1][sem_id] > 0 {
+            process_inner.available[1][sem_id] -= 1;
+        }
+        process_inner.need[tid][1][sem_id] -= 1;
+    }
     0
 }
 /// condvar create syscall
@@ -234,13 +203,7 @@ pub fn sys_condvar_create() -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_condvar_create",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        current_task_tid()
     );
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
@@ -266,13 +229,7 @@ pub fn sys_condvar_signal(condvar_id: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_condvar_signal",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        current_task_tid()
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
@@ -286,13 +243,7 @@ pub fn sys_condvar_wait(condvar_id: usize, mutex_id: usize) -> isize {
     trace!(
         "kernel:pid[{}] tid[{}] sys_condvar_wait",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        current_task_tid()
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
