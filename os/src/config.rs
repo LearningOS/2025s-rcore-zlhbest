@@ -22,5 +22,3 @@ pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 pub use crate::board::{CLOCK_FREQ, MMIO};
 /// 死锁返回值
 pub const DEADLOCK_ERROR_VALUE: isize = -0xDEAD;
-/// barrier型的信号量占数组的前几个
-pub const BARRIERR: usize = 1;

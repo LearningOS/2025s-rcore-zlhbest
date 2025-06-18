@@ -1,4 +1,4 @@
-use crate::config::{BARRIERR, DEADLOCK_ERROR_VALUE};
+use crate::config::DEADLOCK_ERROR_VALUE;
 use crate::sync::{Condvar, Mutex, MutexBlocking, MutexSpin, Semaphore};
 use crate::task::{block_current_and_run_next, current_process, current_task, current_task_tid};
 use crate::timer::{add_timer, get_time_ms};
@@ -73,14 +73,16 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     if process.deadlock_detect(0) {
         return DEADLOCK_ERROR_VALUE;
     }
-    let mut process_inner = process.inner_exclusive_access();
-    process_inner.allocation[tid][0][mutex_id] += 1;
-    process_inner.available[0][mutex_id] -= 1;
-    process_inner.need[tid][0][mutex_id] -= 1;
+    let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
     mutex.lock();
+    // 锁住以后再进行处理
+    let process = current_process();
+    process.inner_exclusive_access().allocation[tid][0][mutex_id] += 1;
+    process.inner_exclusive_access().available[0][mutex_id] -= 1;
+    process.inner_exclusive_access().need[tid][0][mutex_id] -= 1;
     0
 }
 /// mutex unlock syscall
@@ -92,13 +94,14 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
         tid
     );
     let process = current_process();
-    let mut process_inner = process.inner_exclusive_access();
-    process_inner.allocation[tid][0][mutex_id] -= 1;
-    process_inner.available[0][mutex_id] += 1;
+    let process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
     drop(process_inner);
     drop(process);
     mutex.unlock();
+    let process = current_process();
+    process.inner_exclusive_access().allocation[tid][0][mutex_id] -= 1;
+    process.inner_exclusive_access().available[0][mutex_id] += 1;
     0
 }
 /// semaphore create syscall 这里的信号量是存在两种的，第一种是barrier类型的，第二类是资源型的信号量。需要进行区分
@@ -155,10 +158,8 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
     sem.up();
-    if sem_id >= BARRIERR {
-        process.inner_exclusive_access().allocation[tid][1][sem_id] -= 1;
-        process.inner_exclusive_access().available[1][sem_id] += 1;
-    }
+    process.inner_exclusive_access().allocation[tid][1][sem_id] -= 1;
+    process.inner_exclusive_access().available[1][sem_id] += 1;
     0
 }
 /// semaphore down syscall down
@@ -171,13 +172,11 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
     );
     let process = current_process();
     // 只有资源型才进行分配检测
-    if sem_id >= BARRIERR {
-        let mut process_inner = process.inner_exclusive_access();
-        process_inner.need[tid][1][sem_id] += 1;
-        drop(process_inner);
-        if process.deadlock_detect(1) {
-            return DEADLOCK_ERROR_VALUE;
-        }
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.need[tid][1][sem_id] += 1;
+    drop(process_inner);
+    if process.deadlock_detect(1) {
+        return DEADLOCK_ERROR_VALUE;
     }
     let sem = Arc::clone(
         process.inner_exclusive_access().semaphore_list[sem_id]
@@ -185,15 +184,13 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
             .unwrap(),
     );
     sem.down();
-    if sem_id >= BARRIERR {
-        let mut process_inner = process.inner_exclusive_access();
-        process_inner.allocation[tid][1][sem_id] += 1;
-        // 这里应该available-1 但是问题是不发生死锁不代表目前存在可用资源，
-        if process_inner.available[1][sem_id] > 0 {
-            process_inner.available[1][sem_id] -= 1;
-        }
-        process_inner.need[tid][1][sem_id] -= 1;
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.allocation[tid][1][sem_id] += 1;
+    // 这里应该available-1 但是问题是不发生死锁不代表目前存在可用资源，
+    if process_inner.available[1][sem_id] > 0 {
+        process_inner.available[1][sem_id] -= 1;
     }
+    process_inner.need[tid][1][sem_id] -= 1;
     0
 }
 /// condvar create syscall
